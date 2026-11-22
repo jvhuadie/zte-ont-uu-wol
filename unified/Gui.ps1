@@ -17,6 +17,7 @@ $script:teal = [Drawing.ColorTranslator]::FromHtml('#087F82')
 $script:amber = [Drawing.ColorTranslator]::FromHtml('#966512')
 $script:defaultPassword='Zte521'
 $script:detectedModel=''
+$script:uptFirmware=$false
 $script:bindingArchive=''
 $script:pidOnly=$false
 
@@ -60,7 +61,11 @@ function Set-Banner([string]$Text, [string]$Kind = 'info') {
 function Add-Message([string]$Text) {
     if ([string]::IsNullOrWhiteSpace($Text)) { return }
     foreach($line in ($Text -split '\r?\n')) {
-        if($line -match '^已识别：(F7615MV30|F7005MV3|G7615V2|SK-D847N) /'){$script:detectedModel=$Matches[1];$script:cards.model.Text=$Matches[1]}
+        if($line -match '^已识别：(F7615MV30|F7005MV3|G7615V2|SK-D847N) /'){
+            $script:detectedModel=$Matches[1]
+            $script:uptFirmware=$line.EndsWith('；UPT/SAF 固件指纹匹配。')
+            $script:cards.model.Text=if($script:uptFirmware){'G7615V2 · 电信'}else{$script:detectedModel}
+        }
         if($line -match '^VERSION=(.+)$'){
             $script:cards.version.Text='v'+$Matches[1];$script:cards.service.Text='未检测到进程';$script:cards.cloud.Text='未检测到连接';$script:cards.log.Text='由插件管理'
         }
@@ -73,7 +78,7 @@ function Add-Message([string]$Text) {
         if($line -eq 'AUTOSTART=ENABLED'){$script:cards.boot.Text='已启用'}
         if($line -eq 'AUTOSTART=DISABLED'){$script:cards.boot.Text='未启用'}
         if($line -eq 'CLOUD=UNVERIFIED'){$script:cards.cloud.Text='待 UU App 验证'}
-        if($line -eq 'LOG=procd-logread'){$script:cards.log.Text='CU 框架日志'}
+        if($line -eq 'LOG=procd-logread'){$script:cards.log.Text=if($script:uptFirmware){'UPT 框架日志'}else{'CU 框架日志'}}
         if($line -eq 'state=UNINSTALLED'){$script:cards.service.Text='已卸载（保留绑定）'}
         if($line -match '^state=STOPPED$'){$script:cards.service.Text='已停止'}
         if($line -match '^state=PID_READY$'){$script:cards.service.Text='仅 PID 测试'}
@@ -106,10 +111,11 @@ function Set-Busy([bool]$Busy) {
     $script:password.Enabled = !$Busy
     $script:port.Enabled = $false
     $script:checkButton.Enabled = !$Busy
-    $script:installButton.Enabled = !$Busy -and !$CheckOnly
+    $canManage = !$Busy -and !$CheckOnly
+    $script:installButton.Enabled = $canManage
     $script:resetButton.Enabled = !$Busy
-    $optionsButton.Enabled = !$Busy -and !$CheckOnly
-    foreach ($button in $script:manageButtons) { $button.Enabled = !$Busy -and !$CheckOnly }
+    $optionsButton.Enabled = $canManage
+    foreach ($button in $script:manageButtons) { $button.Enabled = $canManage }
     $script:progress.Visible = $Busy
 }
 function Show-UninstallChoice {
@@ -192,7 +198,7 @@ function Start-Operation([string]$Action = 'Check') {
 }
 
 $script:form = New-Object Windows.Forms.Form
-$script:form.Text = 'ZTE ONT · UU 远程开机助手 v1.2.0'
+$script:form.Text = 'ZTE ONT · UU 远程开机助手 v1.2.1'
 $script:form.Size = New-Object Drawing.Size(970, 850)
 $script:form.MinimumSize = New-Object Drawing.Size(890, 790)
 $script:form.StartPosition = 'CenterScreen'
@@ -220,12 +226,12 @@ $header.Controls.Add($title, 0, 0)
 $aboutButton = New-Button '关于'
 $aboutButton.Dock = 'Fill'; $aboutButton.Margin = New-Object Windows.Forms.Padding(4, 3, 0, 3)
 $aboutButton.Add_Click({
-    $text = "光猫 · UU 远程开机助手 v1.2.0（2026-10-31）`n`n支持匹配固件的 F7615MV30、F7005MV3、G7615V2、创维 SK-D847N。`n参考创维设备已验证安装、重启自启及远程开机。其他固件需先采集核验。`n`n维护者：jvhuadie`n代码、适配分析、测试和文档协作：OpenAI Codex`n本项目为社区工具，非网易、中兴或创维官方产品。`n`n项目与下载：https://github.com/jvhuadie/zte-ont-uu-wol`n已有正常安装无需重装；使用说明见主界面对应按钮。"
+    $text = "光猫 · UU 远程开机助手 v1.2.1（2026-11-22）`n`n支持匹配固件的 F7615MV30、F7005MV3、G7615V2、创维 SK-D847N。`n参考创维设备已验证安装、重启自启及远程开机。G7615V2 支持匹配固件的联通版（CU）和电信版（UPT/SAF）。电信版已验证安装、重启自启和远程唤醒。其他固件需先采集核验。`n`n维护者：jvhuadie`n代码、适配分析、测试和文档协作：OpenAI Codex`n本项目为社区工具，非网易、中兴或创维官方产品。`n`n项目与下载：https://github.com/jvhuadie/zte-ont-uu-wol`n已有正常安装无需重装；使用说明见主界面对应按钮。"
     $null = [Windows.Forms.MessageBox]::Show($script:form, $text, '关于', 'OK', 'Information')
 })
 $header.Controls.Add($aboutButton, 1, 0)
 $layout.Controls.Add($header, 0, 0)
-$subtitle = New-Label 'F7615MV30 / F7005MV3 / G7615V2 / SK-D847N  ·  v1.2.0  ·  正式版 · 创维已验证' 9.5
+$subtitle = New-Label 'F7615MV30 / F7005MV3 / G7615V2 / SK-D847N  ·  v1.2.1  ·  联通 CU / 电信 UPT/SAF' 9.5
 $subtitle.ForeColor = $script:muted
 $layout.Controls.Add($subtitle, 0, 1)
 
@@ -310,7 +316,13 @@ $script:resetButton.Add_Click({
     $script:password.Text = $script:defaultPassword; $script:port.Value = 23
     Set-Banner '已恢复默认连接信息，尚未连接光猫。'
 })
-$script:address.Add_TextChanged({$script:detectedModel='';if($script:cards){foreach($card in $script:cards.Values){$card.Text='未检查'}}})
+$script:address.Add_TextChanged({
+    $script:detectedModel=''
+    $script:uptFirmware=$false
+    foreach($card in $script:cards.Values){$card.Text='未检查'}
+    Set-Busy $false
+    Set-Banner '管理地址已更改，请重新检查状态。'
+})
 $docsButton.Add_Click({
     try { Start-Process -FilePath (Join-Path $script:toolRoot 'INSTALL.txt') }
     catch { Set-Banner '无法打开说明文件，请直接打开安装目录中的 INSTALL.txt。' 'error' }
@@ -415,7 +427,8 @@ $script:form.Add_FormClosing({
     param($sender, $event)
     if ($script:work) { $event.Cancel = $true; Set-Banner '操作正在执行，请等待完成后再关闭窗口。' 'warning' }
 })
-if ($CheckOnly) { $script:installButton.Enabled = $false; $script:form.Text += ' · 只读检查' }
+Set-Busy $false
+if ($CheckOnly) { $script:form.Text += ' · 只读检查' }
 if ($PreviewImage) {
     # Developer layout preview: render this app's own controls; no connection.
     $script:form.Add_Shown({

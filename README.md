@@ -2,25 +2,26 @@
 
 一个 Windows 单文件工具，自动识别已验证固件的 **中兴 F7615MV30 / F7005MV3 / G7615V2、创维 SK-D847N**，完成 UU 远程开机服务的安装、状态检查、启停、自启与卸载恢复。
 
-**当前正式版：v1.2.0（2026-10-31）**。新增创维 SK-D847N：参考设备的安装、云连接、启停、绑定恢复和重启自启已实测通过，用户已确认远程开机成功。已有正常安装无需重装，更换电脑端 EXE 不会自动修改光猫。
+**v1.2.1 正式版（2026-11-22）**新增中兴 G7615V2 电信版（UPT/SAF）的限定固件适配。参考设备通过安装与两次整机重启自启，用户实测远程唤醒成功。此前发布的 G7615V2 适配是联通版（CU）。已有正常安装无需重装，更换电脑端 EXE 不会自动修改光猫。
 
-[下载管理工具 EXE](https://github.com/jvhuadie/zte-ont-uu-wol/releases/download/v1.2.0/zte-ont-uu-wol-v1.2.0.exe) · [安装包 ZIP](https://github.com/jvhuadie/zte-ont-uu-wol/releases/download/v1.2.0/zte-ont-uu-wol-v1.2.0.zip) · [Release](https://github.com/jvhuadie/zte-ont-uu-wol/releases/tag/v1.2.0) · [安装说明](INSTALL.txt) · [验证记录](unified/VALIDATION.txt)
+[下载管理工具 EXE](https://github.com/jvhuadie/zte-ont-uu-wol/releases/download/v1.2.1/zte-ont-uu-wol-v1.2.1.exe) · [安装包 ZIP](https://github.com/jvhuadie/zte-ont-uu-wol/releases/download/v1.2.1/zte-ont-uu-wol-v1.2.1.zip) · [Release](https://github.com/jvhuadie/zte-ont-uu-wol/releases/tag/v1.2.1) · [安装说明](INSTALL.txt) · [验证记录](unified/VALIDATION.txt)
 
 > **F7615MV30 安装后必须手动重启光猫**，待网络恢复后确认服务、App 在线和远程开机。已观察到首次运行可能停止，重启后恢复，原因尚未定位。工具不会自动重启光猫。
 
 ## 支持范围
 
-以下为已匹配指纹的参考固件结果，更新至 2026-10-31，不代表同型号的全部运营商版本或其他固件。
+以下为已匹配指纹的参考固件结果，更新至 2026-11-22，不代表同型号的全部运营商版本或其他固件。
 
 | 型号 | 启动方式 | 已完成验证 | 适用边界 |
 |---|---|---|---|
 | F7615MV30 | Wi-Fi 配置回调，光猫端 v0.3 | 重启自启、远程开机、日志轮转；本轮全新安装与重启后云连接 | 安装后需手动重启；本轮重装后未重新确认移动数据唤醒 |
 | F7005MV3 | 原厂 OSGi 插件 | 安装、重启、远程开机、卸载恢复；原始 Andlink 健康跳过 | 原始故障版本自动修复全流程仍待另一台实机验证 |
-| G7615V2 | CU/procd 框架 | 用户确认本轮测试及重启成功（2026-10-30） | [限定指纹和说明](docs/G7615V2.md) |
+| G7615V2 联通版 | CU/procd | 用户确认当轮测试及重启自启通过（2026-10-30） | [联通版固件指纹](docs/G7615V2.md#联通版cu) |
+| G7615V2 电信版（G7615V2-XG） | UPT/SAF + procd | 安装、两次重启自启通过，用户确认远程唤醒成功（2026-11-22） | [电信版固件指纹](docs/G7615V2.md#电信版uptsaf) |
 | 创维 SK-D847N | 原厂 OSGi 插件，受限辅助程序 | 安装、启停、云 TCP、保留绑定及完整卸载恢复、重启自启；用户确认远程开机 | [限定指纹和权限说明](docs/SK-D847N.md)；测试手机网络条件未单独记录 |
 | 其他型号 / 未知固件 | 暂不放行安装 | 先使用只读采集器提交资料 | 型号相近或检测完成不等于已适配 |
 
-四型号均未完成长期稳定性及多设备、多固件覆盖验证。Windows 工具与光猫端服务版本分别维护，版本号不同属正常情况。
+各型号均未完成长期稳定性及多设备、多固件覆盖验证。Windows 工具与光猫端服务版本分别维护，版本号不同属正常情况。
 
 每次操作先核对型号、aarch64 架构与固件摘要。F7005 与创维还核对各自启动环境；未知或交叉固件会停止，不会改用另一型号的流程。
 
@@ -40,12 +41,13 @@ Windows 需 PowerShell 5.1 / .NET Framework，无需 Python、SDK 或 Windows �
 |---|---|---|
 | F7615MV30 | `/usr/plugin/uu-wol-f7615/` | `/usr/plugin/uu-wol-f7615/files/` |
 | F7005MV3 | `/usr/plugin/uu-wol-f7005/` | `/usr/plugin/bundlecache/bundle编号/data/` |
-| G7615V2 | CU 框架内 `/opt/uu-wol-g7615/` | 同一目录 |
+| G7615V2 联通版（CU） | 宿主 `/opt/cu/apps/apps/opt/uu-wol-g7615/` | CU 框架内 `/opt/uu-wol-g7615/` |
+| G7615V2 电信版（UPT/SAF） | 宿主 `/opt/upt/apps/apps/opt/uu-wol-g7615/` | UPT/SAF 框架内 `/opt/uu-wol-g7615/` |
 | 创维 SK-D847N | `/usr/data/uu-wol-skd847n/` | `/usr/data/o_ins/felix-cache/bundle编号/data/` |
 
 F7005 与创维的 `bundle编号` 由原厂 OSGi 框架动态分配，重新安装后可能变化，不能写死编号；应按本项目 `service.jar` 的插件登记定位对应数据目录。绑定文件主要为 `.sn`、`.uuplugin_uuid` 和 `uu.conf`，位于表中的运行数据目录，请勿公开分享。
 
-G7615 的路径属于 **CU 框架内部**。从宿主 Telnet 可通过 `/proc/CU框架进程PID/root/opt/uu-wol-g7615/` 访问，其中 PID 需按当前框架进程替换；已验证参考固件的持久文件落在宿主 `/opt/cu/apps/apps/opt/uu-wol-g7615/`。其他型号的路径直接在宿主使用。启停、恢复和卸载请通过工具操作，避免直接删除目录导致插件登记或权限残留。
+G7615V2 两个版本共用框架内路径，宿主持久目录各不相同。上表第二列可直接在宿主查看。启停、恢复和卸载请通过工具操作，避免直接删除目录导致插件登记或权限残留。
 
 ## 服务管理与恢复
 

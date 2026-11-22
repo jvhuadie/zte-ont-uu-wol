@@ -28,11 +28,13 @@ try{
  $model=Read-OntValue 'uname -n';$arch=Read-OntValue 'uname -m'
  $fw=(Read-OntValue 'sha256sum /bin/cspd').Split(' ')[0];$boot=''
  if($model -ceq 'F7005MV3' -or $model -ceq 'skyworth'){$boot=(Read-OntValue 'sha256sum /etc/default/S01userconfig').Split(' ')[0]}
+ if($model -ceq 'G7615V2' -and $fw -ceq '63d776a8030ed1151986d92b82206174c63d7c071a172ff7a839cf9f2d9c1403'){$boot=(Read-OntValue 'sha256sum /usr/sbin/saf').Split(' ')[0]}
  $profile=Resolve-OntProfile $model $arch $fw $boot
  $route=@(Get-OntRoute $profile $Action $PidOnly.IsPresent $BindingArchive)
  $displayModel=if($profile -eq 'skd847n'){'SK-D847N'}else{$model}
- Write-Host ('已识别：'+$displayModel+' / '+$arch+'；固件匹配。')
- Write-Host ('安装方案：'+$(if($profile -eq 'f7615'){'F7615MV30 v0.6.1 / Wi-Fi 配置回调'}elseif($profile -eq 'g7615'){'G7615V2 / CU 框架'}elseif($profile -eq 'skd847n'){'创维 SK-D847N / 原厂 OSGi'}else{'F7005MV3 0.1.0-rc1 / 原厂插件机制'}))
+ $firmwareMessage=if($profile -eq 'g7615-upt'){'UPT/SAF 固件指纹匹配。'}else{'固件匹配。'}
+ Write-Host ('已识别：'+$displayModel+' / '+$arch+'；'+$firmwareMessage)
+ Write-Host ('安装方案：'+$(if($profile -eq 'f7615'){'F7615MV30 v0.6.1 / Wi-Fi 配置回调'}elseif($profile -eq 'g7615'){'G7615V2 / CU 框架'}elseif($profile -eq 'g7615-upt'){'G7615V2 / UPT/SAF 框架'}elseif($profile -eq 'skd847n'){'创维 SK-D847N / 原厂 OSGi'}else{'F7005MV3 0.1.0-rc1 / 原厂插件机制'}))
  [pscustomobject]@{Kind='DetectedDevice';Model=$displayModel;Profile=$profile}
  $session.Dispose();$session=$null
  if($Action -eq 'Detect'){Write-Host '识别完成，未写入光猫文件、未启动或停止服务。';return}
@@ -41,8 +43,9 @@ try{
    $global:LASTEXITCODE=0
    & "$PSScriptRoot/profiles/f7615/Auto.ps1" -RouterAddress $RouterAddress -Username $Username -Password $Password -Action $operation -NonInteractive
    if($LASTEXITCODE -ne 0){throw 'F7615 操作未完成；后续步骤已停止，请先检查状态。'}
-  }elseif($profile -eq 'g7615'){
-   & "$PSScriptRoot/profiles/g7615/Manage.ps1" -RouterAddress $RouterAddress -Username $Username -Password $Password -Action $operation
+  }elseif($profile -in @('g7615','g7615-upt')){
+   $variant=if($profile -eq 'g7615-upt'){'UPT'}else{'CU'}
+   & "$PSScriptRoot/profiles/g7615/Manage.ps1" -FrameworkVariant $variant -RouterAddress $RouterAddress -Username $Username -Password $Password -Action $operation
   }elseif($profile -eq 'skd847n'){
    & "$PSScriptRoot/profiles/skd847n/Manage.ps1" -RouterAddress $RouterAddress -Username $Username -Password $Password -Action $operation -BindingArchive $BindingArchive
   }else{

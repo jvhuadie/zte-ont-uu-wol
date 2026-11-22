@@ -6,9 +6,10 @@ $fn=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefiniti
 . ([scriptblock]::Create($fn.Extent.Text))
 function Remote($command,[switch]$AllowFailure){
  if($command -eq 'cat /proc/mounts'){return [pscustomobject]@{Code=0;Text=$script:mounts}}
- if($command -ne 'df -k /opt/cu/apps'){throw "Wrong target: $command"}
+ if($command -ne ('df -k '+$script:expectedPartition)){throw "Wrong target: $command"}
  return [pscustomobject]@{Code=$script:code;Text=$script:disk}
 }
+$script:expectedPartition='/opt/cu/apps'
 $good='ubi0_0 /opt/cu/apps ubifs rw,nosuid,relatime 0 0'
 $script:mounts=$good;$script:code=0
 foreach($row in @('ubi0_0 88420 2564 81304 3% /opt/cu/apps',"ubi0_0`n 88420 2564 81304 3% /opt/cu/apps")){
@@ -29,4 +30,8 @@ foreach($case in @(
  try{$null=Get-CuFreeKiB}catch{$message=$_.Exception.Message}
  if($case[3]){if($message -notmatch $case[3]){throw "Wrong error: $message"}}elseif($message){throw $message}
 }
-'CU_SPACE_REAL_LAYOUT_WRAPPING_THRESHOLD_MOUNT_AND_FAILURE_CASES_OK'
+$script:expectedPartition='/opt/upt/apps'
+$script:mounts=$good+[Environment]::NewLine+$good.Replace('/opt/cu/apps',$script:expectedPartition)
+$script:disk='ubi0_0 88420 3660 80208 4% /opt/upt/apps';$script:code=0
+if((Get-CuFreeKiB '/opt/upt/apps') -ne 80208){throw 'UPT capacity parse failed'}
+'CU_AND_UPT_SPACE_REAL_LAYOUT_WRAPPING_THRESHOLD_MOUNT_AND_FAILURE_CASES_OK'

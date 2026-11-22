@@ -1,5 +1,5 @@
 ﻿param([ValidateSet('Install','Status','Start','Stop','EnableAutostart','DisableAutostart','Restore','Uninstall','UninstallFull')][string]$Action='Status',
- [string]$RouterAddress='192.168.1.1',[string]$Username='root',[Security.SecureString]$Password)
+ [string]$RouterAddress='192.168.1.1',[string]$Username='root',[Security.SecureString]$Password, [ValidateSet('CU','UPT')][string]$FrameworkVariant='CU')
 $ErrorActionPreference='Stop'
 $root=$PSScriptRoot;$session=$null;$ownsPassword=$false;$script:lanUnavailable=$false
 . "$root/../../tools/Network.ps1"
@@ -24,30 +24,40 @@ function ShellLiteral([string]$s){return "'"+$s.Replace("'","'\''")+"'"}
 function Find-Framework {
  # Execute our fixed script inline; this stage writes nothing to the device.
  $lines=[IO.File]::ReadAllLines("$root/preflight.sh") | Where-Object {$_.Trim() -and !$_.TrimStart().StartsWith('#')}
+ if($FrameworkVariant -eq 'UPT'){
+  $lines = $lines | ForEach-Object {
+   $_.Replace('0afb71c8d938a82395675bc1fa96cb10ec23f5a9ab9f4f3d66073257d02c7b36','63d776a8030ed1151986d92b82206174c63d7c071a172ff7a839cf9f2d9c1403').
+      Replace('42b63762cec38f78bf1248245061e753d38ecbefdb5945f74356c5bff8262a40  /bin/ufwmg','094e82882896d4e21a7916e2f6a3ab9ffdd95471d2174ab24564578e7008569c  /usr/sbin/saf').
+      Replace('\/opt\/cu\/framework\/ufw\/rootfs','\/opt\/upt\/framework\/saf\/rootfs').
+      Replace('\/opt\/cu\/apps\/apps','\/opt\/upt\/apps\/apps').
+      Replace('\/opt\/cu\/apps\/work','\/opt\/upt\/apps\/olwork')
+  }
+ }
  $script=($lines -join '; ') -replace '\b(do|then|else); ', '$1 '
  if($script.Length -gt 3500){throw '预检命令超过传输长度限制'}
  $r=Remote ('/bin/sh -c '+(ShellLiteral $script))
- if($r.Text -notmatch '^/proc/[0-9]+/root$'){throw 'CU 框架识别结果异常，未继续。'}
+ if($r.Text -notmatch '^/proc/[0-9]+/root$'){throw '框架识别结果异常，未继续。'}
  return $r.Text
 }
-function Get-CuFreeKiB {
+function Get-CuFreeKiB([ValidateSet('/opt/cu/apps','/opt/upt/apps')][string]$Partition='/opt/cu/apps') {
  # The framework overlay persists here. Host df on /proc/PID/root/opt can
  # select the host root filesystem instead of the container overlay.
  $mounts=(Remote 'cat /proc/mounts').Text
- $mount=[regex]::Matches($mounts,'(?m)^\S+[ \t]+/opt/cu/apps[ \t]+ubifs[ \t]+(?<options>\S+)[ \t]+\d+[ \t]+\d+$')
+ $mountPattern = '(?m)^\S+[ \t]+{0}[ \t]+ubifs[ \t]+(?<options>\S+)[ \t]+\d+[ \t]+\d+$' -f [regex]::Escape($Partition)
+ $mount=[regex]::Matches($mounts,$mountPattern)
  if($mount.Count -ne 1 -or ($mount[0].Groups['options'].Value -split ',') -notcontains 'rw'){
-  throw '未确认 /opt/cu/apps 为可写 UBIFS 持久分区，未安装。'
+  throw "未确认 $Partition 为可写 UBIFS 持久分区，未安装。"
  }
- $disk=Remote 'df -k /opt/cu/apps' -AllowFailure
- $rows=[regex]::Matches($disk.Text,'(?m)^[ \t]*(?:\S+[ \t]+)?(?<total>\d+)[ \t]+(?<used>\d+)[ \t]+(?<free>\d+)[ \t]+\d+%[ \t]+/opt/cu/apps[ \t]*$')
+ $disk=Remote "df -k $Partition" -AllowFailure
+ $rows=[regex]::Matches($disk.Text,('(?m)^[ \t]*(?:\S+[ \t]+)?(?<total>\d+)[ \t]+(?<used>\d+)[ \t]+(?<free>\d+)[ \t]+\d+%[ \t]+'+[regex]::Escape($Partition)+'[ \t]*$'))
  if($disk.Code -ne 0 -or $rows.Count -ne 1){
   Write-Host ('空间检查原始结果：'+$disk.Text)
-  throw '无法读取 /opt/cu/apps 的可用空间（不是已确认空间不足），未安装。'
+  throw "无法读取 $Partition 的可用空间（不是已确认空间不足），未安装。"
  }
  $free=0L;$total=0L
  if(![long]::TryParse($rows[0].Groups['free'].Value,[ref]$free) -or ![long]::TryParse($rows[0].Groups['total'].Value,[ref]$total) -or $total -le 0 -or $free -gt $total){throw '持久分区容量数据异常，未安装。'}
- Write-Host ('CU 持久分区 /opt/cu/apps：可用 '+$free+' KiB（'+[Math]::Round($free/1024.0,1)+' MiB），最低需要 16 MiB。')
- if($free -lt 16384){throw ('CU 持久分区空间不足：可用 '+$free+' KiB，至少需要 16384 KiB，未安装。')}
+ Write-Host ("持久分区 ${Partition}：可用 "+$free+' KiB（'+[Math]::Round($free/1024.0,1)+' MiB），最低需要 16 MiB。')
+ if($free -lt 16384){throw ('持久分区空间不足：可用 '+$free+' KiB，至少需要 16384 KiB，未安装。')}
  return $free
 }
 function Try-LanUpload([string]$name,[byte[]]$bytes,[string]$part){
@@ -150,7 +160,7 @@ function Show-Status {
  $state=Control status
  foreach($line in ($state -split "`n")){Write-Host $line}
  Write-Host 'UU 云连接：待 UU App 验证'
- Write-Host '日志由 CU 框架管理，可在框架内使用 logread 查看。'
+ Write-Host '日志由框架管理，可在框架内使用 logread 查看。'
 }
 try{
  $session=New-Object ZteUuInstaller.TelnetSession($RouterAddress,23,5000)
@@ -161,7 +171,7 @@ try{
   if($hello -match '(?im)access denied|login incorrect|(?:login|username)\s*:\s*$'){throw '登录失败'}
  }
  $framework=Find-Framework;$base="$framework/opt/uu-wol-g7615"
- Write-Host 'G7615V2：CU 框架服务；参考固件已收到用户本轮测试及重启测试成功反馈。'
+ Write-Host "G7615V2：$FrameworkVariant 框架服务。"
  $absent=Remote "[ ! -e '$base' ] && [ ! -L '$base' ] && [ ! -e '$framework/etc/init.d/uu-wol-g7615' ] && [ ! -L '$framework/etc/init.d/uu-wol-g7615' ] && [ ! -e '$framework/etc/rc.d/S99uu-wol-g7615' ] && [ ! -L '$framework/etc/rc.d/S99uu-wol-g7615' ] && [ ! -e '$framework/etc/rc.d/K10uu-wol-g7615' ] && [ ! -L '$framework/etc/rc.d/K10uu-wol-g7615' ]" -AllowFailure
  if($Action -eq 'Status' -and $absent.Code -eq 0){
   Write-Host '光猫端版本：未安装';Write-Host '服务：未安装';Write-Host '自启：未安装';Write-Host 'UU 云连接：未连接';Write-Host '日志管道：未安装';return
@@ -187,7 +197,8 @@ try{
   $payload['uu.conf']=[Text.Encoding]::ASCII.GetBytes("log_level=info`nversion=v14.10.6`nlan_ifname=br0`nsn_no_mac_prefix=1`n")
   $payload['managed-v1']=[Text.Encoding]::ASCII.GetBytes("G7615V2 0.1.0-rc1`n")
   # No package-manager calls, remounts, firmware writes or factory file replacement.
-  $free=Get-CuFreeKiB
+  $partition=if($FrameworkVariant -eq 'UPT'){'/opt/upt/apps'}else{'/opt/cu/apps'}
+  $free=Get-CuFreeKiB $partition
   if($absent.Code -eq 0){
    $null=Remote "umask 077; mkdir '$base'"
    foreach($name in ($payload.Keys|Sort-Object)){Upload $name $payload[$name]}

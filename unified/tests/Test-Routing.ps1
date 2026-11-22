@@ -4,6 +4,8 @@ $root=Split-Path $PSScriptRoot -Parent
 $f='58a5a48a3bfb5bd38209ffa58e3fb5b635623d4a2125799cd8e7e897e3a6a58f'
 $g='453c47535b274071a5ae83d533d825e5072c8b562857e51eeefa8826953180ed'
 $b='7c4cc96aaaafc766d1d0b558672487b3532eae3b2df11111a51160a071455f21'
+$uptFw='63d776a8030ed1151986d92b82206174c63d7c071a172ff7a839cf9f2d9c1403'
+$uptSaf='094e82882896d4e21a7916e2f6a3ab9ffdd95471d2174ab24564578e7008569c'
 function Expect-Rejection([scriptblock]$Block){$rejected=$false;try{& $Block | Out-Null}catch{$rejected=$true};if(!$rejected){throw 'Unsafe input accepted'}}
 if((Resolve-OntProfile F7615MV30 aarch64 $f '') -ne 'f7615'){throw 'F7615 route'}
 if((Resolve-OntProfile F7005MV3 aarch64 $g $b) -ne 'f7005'){throw 'F7005 route'}
@@ -13,6 +15,10 @@ Expect-Rejection {Resolve-OntProfile F7005MV3 aarch64 $g ('0'*64)}
 Expect-Rejection {Resolve-OntProfile F7005MV3 armv7l $g $b}
 Expect-Rejection {Resolve-OntProfile G7615V2 aarch64 $f $b}
 Expect-Rejection {Resolve-OntProfile F7615MV30-test aarch64 $f $b}
+if((Resolve-OntProfile G7615V2 aarch64 $uptFw $uptSaf) -ne 'g7615-upt'){throw 'G7615 UPT identification'}
+Expect-Rejection {Resolve-OntProfile G7615V2 aarch64 $uptFw ('0'*64)}
+Expect-Rejection {Get-OntRoute g7615-upt Install $false 'unrelated.tgz'}
+if((@(Get-OntRoute g7615-upt ServiceStart $false '') -join ',') -ne 'Start'){throw 'UPT start route'}
 Expect-Rejection {Get-OntRoute f7615 Install $true ''}
 Expect-Rejection {Get-OntRoute f7615 Install $false 'binding.tgz'}
 Expect-Rejection {Get-OntRoute f7615 EnableService $false ''}
@@ -46,7 +52,7 @@ namespace ZteUuInstaller {
    if(!last.StartsWith("echo 'BEGIN_"))return "/ #";
    var m=Regex.Match(last,@"echo '(BEGIN_[a-f0-9]+)'; \( (.*?) \); rc=\$\?; echo; echo '(END_[a-f0-9]+):'");
    if(!m.Success)throw new Exception("Bad frame");string c=m.Groups[2].Value;Commands.Add(c);string v;
-   switch(c){case "id -u":v=Uid;break;case "uname -n":v=Model;break;case "uname -m":v=Arch;break;case "sha256sum /bin/cspd":v=Firmware+"  /bin/cspd";break;case "sha256sum /etc/default/S01userconfig":v=Boot+"  /etc/default/S01userconfig";break;default:throw new Exception("Unexpected write or command");}
+   switch(c){case "id -u":v=Uid;break;case "uname -n":v=Model;break;case "uname -m":v=Arch;break;case "sha256sum /bin/cspd":v=Firmware+"  /bin/cspd";break;case "sha256sum /etc/default/S01userconfig":v=Boot+"  /etc/default/S01userconfig";break;case "sha256sum /usr/sbin/saf":v=Boot+"  /usr/sbin/saf";break;case "grep \" /opt/upt/apps \" /proc/mounts || :":v="ubi0_0 /opt/upt/apps ubifs rw,nosuid 0 0";break;default:throw new Exception("Unexpected write or command");}
    return m.Groups[1].Value+"\r\n"+v+"\r\n"+m.Groups[3].Value+":0\r\n";
   }
   public void Dispose(){}
@@ -60,8 +66,9 @@ try{
  foreach($file in @('Manage.ps1','tools/Profiles.ps1','tools/Network.ps1')){Copy-Item -LiteralPath (Join-Path $root $file) -Destination (Join-Path $sandbox $file)}
  foreach($profile in @('f7615','f7005','g7615')){
   $name=if($profile -eq 'f7615'){'Auto.ps1'}else{'Manage.ps1'}
-  $stub='param($RouterAddress,$Username,$Password,$Action,$BindingArchive,[switch]$PidOnly,[switch]$NonInteractive) [ZteUuInstaller.TelnetSession]::Engines.Add('''+$profile+':$Action'')'
+  $stub='param($RouterAddress,$Username,$Password,$Action,$BindingArchive,[switch]$PidOnly,[switch]$NonInteractive,$FrameworkVariant) [ZteUuInstaller.TelnetSession]::Engines.Add('''+$profile+':$Action'')'
   $stub=$stub.Replace("'$profile"+':$Action' +"'",'"'+$profile+':$Action"')
+  if($profile -eq 'g7615'){$stub='param($RouterAddress,$Username,$Password,$Action,$FrameworkVariant) if($FrameworkVariant -eq "UPT"){[ZteUuInstaller.TelnetSession]::Engines.Add("g7615:${Action}:UPT")}else{[ZteUuInstaller.TelnetSession]::Engines.Add("g7615:$Action")}'}
   [IO.File]::WriteAllText((Join-Path $sandbox "profiles/$profile/$name"),$stub)
  }
  [ZteUuInstaller.TelnetSession]::Firmware=$g;[ZteUuInstaller.TelnetSession]::Boot=$b
@@ -75,6 +82,14 @@ try{
  [ZteUuInstaller.TelnetSession]::Model='G7615V2';[ZteUuInstaller.TelnetSession]::Firmware='0afb71c8d938a82395675bc1fa96cb10ec23f5a9ab9f4f3d66073257d02c7b36'
  & "$sandbox/Manage.ps1" -Action Install -Password $secret | Out-Null
  if([ZteUuInstaller.TelnetSession]::Engines[2] -ne 'g7615:Install'){throw 'Wrong G7615 backend'}
+ [ZteUuInstaller.TelnetSession]::Firmware=$uptFw;[ZteUuInstaller.TelnetSession]::Boot=$uptSaf
+ & "$sandbox/Manage.ps1" -Action Status -Password $secret | Out-Null
+ if([ZteUuInstaller.TelnetSession]::Engines[3] -ne 'g7615:Status:UPT'){throw 'Wrong UPT status backend'}
+ & "$sandbox/Manage.ps1" -Action Install -Password $secret | Out-Null
+ if([ZteUuInstaller.TelnetSession]::Engines[4] -ne 'g7615:Install:UPT'){throw 'Wrong UPT install backend'}
+ [ZteUuInstaller.TelnetSession]::Boot='0'*64
+ Expect-Rejection {& "$sandbox/Manage.ps1" -Action Install -Password $secret}
+ if([ZteUuInstaller.TelnetSession]::Engines.Count -ne 5){throw 'Wrong SAF fingerprint dispatched an install backend'}
  [ZteUuInstaller.TelnetSession]::Firmware=$f
  $before=[ZteUuInstaller.TelnetSession]::Engines.Count
  [ZteUuInstaller.TelnetSession]::Model='G7615V2'
